@@ -1,0 +1,9 @@
+build/
+app/display_demo/flower.png
+third_party/pocketjs/node_modules/
+third_party/pocketjs/.cache/
+third_party/pocketjs/framework/src/styles.generated.ts
+third_party/pocketjs/engine/ui-cabi/target/
+third_party/quickjs/.obj/
+third_party/quickjs/qjs
+third_party/quickjs/libquickjs.a

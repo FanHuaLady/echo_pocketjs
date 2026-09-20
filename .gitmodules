@@ -1,0 +1,6 @@
+[submodule "third_party/pocketjs"]
+	path = third_party/pocketjs
+	url = https://github.com/pocket-stack/pocketjs.git
+[submodule "third_party/quickjs"]
+	path = third_party/quickjs
+	url = https://github.com/bellard/quickjs.git
