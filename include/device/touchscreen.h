@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define TOUCHSCREEN_MAX_SLOTS 8
+
 struct touchscreen {
     int fd;
     int width;
@@ -11,7 +13,17 @@ struct touchscreen {
     int raw_max_x;
     int raw_min_y;
     int raw_max_y;
+    int flip_x;
+    int flip_y;
+    int swap_xy;
     int uses_multitouch;
+    int uses_slots;
+    int active_slot;
+    int slot_tracking_ids[TOUCHSCREEN_MAX_SLOTS];
+    int slot_raw_x[TOUCHSCREEN_MAX_SLOTS];
+    int slot_raw_y[TOUCHSCREEN_MAX_SLOTS];
+    int slot_has_x[TOUCHSCREEN_MAX_SLOTS];
+    int slot_has_y[TOUCHSCREEN_MAX_SLOTS];
     int tracking_id;
     int button_down;
     int raw_x;

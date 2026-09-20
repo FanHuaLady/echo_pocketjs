@@ -8,6 +8,30 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+static int framebuffer_remap(struct framebuffer *framebuffer)
+{
+    if (framebuffer->memory != NULL &&
+        framebuffer->memory != MAP_FAILED) {
+        munmap(framebuffer->memory, framebuffer->map_length);
+    }
+    framebuffer->map_length = framebuffer->fixed.smem_len;
+    framebuffer->memory = mmap(
+        NULL,
+        framebuffer->map_length,
+        PROT_READ | PROT_WRITE,
+        MAP_SHARED,
+        framebuffer->fd,
+        0
+    );
+    if (framebuffer->memory == MAP_FAILED) {
+        fprintf(stderr, "mmap framebuffer failed: %s\n", strerror(errno));
+        framebuffer->memory = NULL;
+        framebuffer->map_length = 0;
+        return -1;
+    }
+    return 0;
+}
+
 static uint32_t scale_channel(
     uint8_t value,
     const struct fb_bitfield *field
@@ -64,17 +88,9 @@ int framebuffer_open(const char *path, struct framebuffer *framebuffer)
         framebuffer->fd = -1;
         return -1;
     }
-    framebuffer->map_length = framebuffer->fixed.smem_len;
-    framebuffer->memory = mmap(
-        NULL,
-        framebuffer->map_length,
-        PROT_READ | PROT_WRITE,
-        MAP_SHARED,
-        framebuffer->fd,
-        0
-    );
-    if (framebuffer->memory == MAP_FAILED) {
-        fprintf(stderr, "mmap %s failed: %s\n", path, strerror(errno));
+    framebuffer->original_variable = framebuffer->variable;
+    framebuffer->has_original_variable = 1;
+    if (framebuffer_remap(framebuffer) != 0) {
         close(framebuffer->fd);
         framebuffer->fd = -1;
         return -1;
@@ -92,6 +108,12 @@ int framebuffer_open(const char *path, struct framebuffer *framebuffer)
 
 void framebuffer_close(struct framebuffer *framebuffer)
 {
+    if (framebuffer->fd >= 0 && framebuffer->has_original_variable) {
+        struct fb_var_screeninfo restore = framebuffer->original_variable;
+
+        restore.activate = FB_ACTIVATE_NOW;
+        ioctl(framebuffer->fd, FBIOPUT_VSCREENINFO, &restore);
+    }
     if (framebuffer->memory != NULL &&
         framebuffer->memory != MAP_FAILED) {
         munmap(framebuffer->memory, framebuffer->map_length);
@@ -102,6 +124,151 @@ void framebuffer_close(struct framebuffer *framebuffer)
     framebuffer->memory = NULL;
     framebuffer->fd = -1;
     framebuffer->map_length = 0;
+    framebuffer->has_original_variable = 0;
+}
+
+uint32_t framebuffer_buffer_count(const struct framebuffer *framebuffer)
+{
+    size_t visible_bytes;
+    size_t memory_buffers;
+    uint32_t virtual_buffers;
+    uint32_t buffers;
+
+    if (framebuffer->variable.yres == 0 ||
+        framebuffer->fixed.line_length == 0) {
+        return 0;
+    }
+    visible_bytes = (size_t)framebuffer->fixed.line_length *
+                    framebuffer->variable.yres;
+    if (visible_bytes == 0) {
+        return 0;
+    }
+    memory_buffers = framebuffer->map_length / visible_bytes;
+    virtual_buffers = framebuffer->variable.yres_virtual /
+                      framebuffer->variable.yres;
+    buffers = memory_buffers < virtual_buffers
+        ? (uint32_t)memory_buffers
+        : virtual_buffers;
+    return buffers == 0 ? 1 : buffers;
+}
+
+int framebuffer_try_enable_double_buffer(struct framebuffer *framebuffer)
+{
+    struct fb_var_screeninfo requested;
+    size_t required_bytes;
+
+    if (framebuffer->fd < 0) {
+        return -1;
+    }
+    if (framebuffer_buffer_count(framebuffer) >= 2) {
+        return 0;
+    }
+
+    requested = framebuffer->variable;
+    requested.xoffset = 0;
+    requested.yoffset = 0;
+    requested.yres_virtual = framebuffer->variable.yres * 2U;
+    requested.activate = FB_ACTIVATE_NOW;
+    if (ioctl(framebuffer->fd, FBIOPUT_VSCREENINFO, &requested) < 0) {
+        fprintf(
+            stderr,
+            "FBIOPUT_VSCREENINFO double buffer failed: %s\n",
+            strerror(errno)
+        );
+        return -1;
+    }
+    if (ioctl(framebuffer->fd, FBIOGET_FSCREENINFO, &framebuffer->fixed) < 0 ||
+        ioctl(framebuffer->fd, FBIOGET_VSCREENINFO, &framebuffer->variable) < 0) {
+        fprintf(stderr, "cannot re-query framebuffer: %s\n", strerror(errno));
+        return -1;
+    }
+
+    required_bytes = (size_t)framebuffer->fixed.line_length *
+                     framebuffer->variable.yres * 2U;
+    if (framebuffer->variable.yres_virtual < framebuffer->variable.yres * 2U ||
+        framebuffer->fixed.smem_len < required_bytes) {
+        fprintf(
+            stderr,
+            "framebuffer double buffer unavailable: yres_virtual=%u smem_len=%u required=%zu\n",
+            framebuffer->variable.yres_virtual,
+            framebuffer->fixed.smem_len,
+            required_bytes
+        );
+        return -1;
+    }
+
+    if (framebuffer_remap(framebuffer) != 0) {
+        return -1;
+    }
+    printf(
+        "framebuffer double buffer enabled: yres_virtual=%u buffers=%u\n",
+        framebuffer->variable.yres_virtual,
+        framebuffer_buffer_count(framebuffer)
+    );
+    return 0;
+}
+
+int framebuffer_fill_rgb(
+    struct framebuffer *framebuffer,
+    uint32_t buffer_index,
+    uint8_t red,
+    uint8_t green,
+    uint8_t blue
+)
+{
+    uint16_t output = pack_rgb(&framebuffer->variable, red, green, blue);
+    uint32_t buffer_count = framebuffer_buffer_count(framebuffer);
+    uint32_t y;
+
+    if (buffer_count == 0 || buffer_index >= buffer_count) {
+        return -1;
+    }
+    for (y = 0; y < framebuffer->variable.yres; y++) {
+        uint32_t x;
+        size_t row_offset = (size_t)(buffer_index * framebuffer->variable.yres + y) *
+                            framebuffer->fixed.line_length;
+        uint8_t *row = framebuffer->memory + row_offset;
+
+        for (x = 0; x < framebuffer->variable.xres; x++) {
+            size_t offset = (size_t)(x + framebuffer->variable.xoffset) * 2U;
+            if (row_offset + offset + sizeof(output) > framebuffer->map_length) {
+                return -1;
+            }
+            memcpy(row + offset, &output, sizeof(output));
+        }
+    }
+    return 0;
+}
+
+int framebuffer_pan(struct framebuffer *framebuffer, uint32_t buffer_index)
+{
+    struct fb_var_screeninfo requested = framebuffer->variable;
+    uint32_t buffer_count = framebuffer_buffer_count(framebuffer);
+
+    if (buffer_count == 0 || buffer_index >= buffer_count) {
+        return -1;
+    }
+    requested.xoffset = 0;
+    requested.yoffset = buffer_index * framebuffer->variable.yres;
+    requested.activate = FB_ACTIVATE_VBL;
+    if (ioctl(framebuffer->fd, FBIOPAN_DISPLAY, &requested) < 0) {
+        requested.activate = FB_ACTIVATE_NOW;
+        if (ioctl(framebuffer->fd, FBIOPAN_DISPLAY, &requested) < 0) {
+            fprintf(stderr, "FBIOPAN_DISPLAY failed: %s\n", strerror(errno));
+            return -1;
+        }
+    }
+    framebuffer->variable.yoffset = requested.yoffset;
+    return 0;
+}
+
+int framebuffer_sync(struct framebuffer *framebuffer)
+{
+    if (msync(framebuffer->memory, framebuffer->map_length, MS_SYNC) < 0) {
+        fprintf(stderr, "msync framebuffer failed: %s\n", strerror(errno));
+        return -1;
+    }
+    return 0;
 }
 
 int framebuffer_present_bgra(
@@ -143,9 +310,5 @@ int framebuffer_present_bgra(
         }
     }
 
-    if (msync(framebuffer->memory, framebuffer->map_length, MS_SYNC) < 0) {
-        fprintf(stderr, "msync framebuffer failed: %s\n", strerror(errno));
-        return -1;
-    }
-    return 0;
+    return framebuffer_sync(framebuffer);
 }

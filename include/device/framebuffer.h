@@ -11,10 +11,23 @@ struct framebuffer {
     uint8_t *memory;
     struct fb_fix_screeninfo fixed;
     struct fb_var_screeninfo variable;
+    struct fb_var_screeninfo original_variable;
+    int has_original_variable;
 };
 
 int framebuffer_open(const char *path, struct framebuffer *framebuffer);
 void framebuffer_close(struct framebuffer *framebuffer);
+uint32_t framebuffer_buffer_count(const struct framebuffer *framebuffer);
+int framebuffer_try_enable_double_buffer(struct framebuffer *framebuffer);
+int framebuffer_fill_rgb(
+    struct framebuffer *framebuffer,
+    uint32_t buffer_index,
+    uint8_t red,
+    uint8_t green,
+    uint8_t blue
+);
+int framebuffer_pan(struct framebuffer *framebuffer, uint32_t buffer_index);
+int framebuffer_sync(struct framebuffer *framebuffer);
 int framebuffer_present_bgra(
     struct framebuffer *framebuffer,
     const uint8_t *bgra,

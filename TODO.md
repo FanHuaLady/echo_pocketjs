@@ -34,10 +34,10 @@ Solid JSX guest
 - host 支持有限帧测试和无限运行；传入 `0` 表示持续播放。
 - 当前版本已经上传到开发板并持续运行验证。
 
-当前开发板运行目录：
+开发板运行目录示例：
 
 ```text
-/root/Flower/04_hello_rust
+/root/pocketjs-rv1106
 ```
 
 启动命令：
@@ -52,8 +52,8 @@ Solid JSX guest
 
 ### P0：基础运行稳定性
 
-- [ ] 增加 `SIGINT`、`SIGTERM` 处理，确保退出时正确关闭 framebuffer、触摸设备和 PocketJS runtime。
-- [ ] 将固定的 `nanosleep` 帧循环改为基于单调时钟的帧调度，记录实际 FPS 和丢帧情况。
+- [x] 增加 `SIGINT`、`SIGTERM` 处理，确保退出时正确关闭 framebuffer、触摸设备和 PocketJS runtime。
+- [x] 将固定的 `nanosleep` 帧循环改为基于单调时钟的帧调度，记录实际 FPS 和丢帧情况；当前 demo 左上角显示 host 统计的 FPS。
 - [ ] 增加统一的 host 日志等级和错误码，方便在开发板上定位启动、资源和渲染错误。
 - [ ] 检查 guest、`.pak`、QuickJS 和 Rust core 的内存释放路径。
 - [ ] 增加长时间运行测试，至少验证连续运行数小时后的内存、帧率和触摸状态。
@@ -61,21 +61,22 @@ Solid JSX guest
 ### P0：Framebuffer 适配完善
 
 - [ ] 验证不同 RV1106 固件下的分辨率、stride、x/y offset 和 RGB565 bitfield。
-- [ ] 确认是否可以使用 page flip、双缓冲或 `FBIOPAN_DISPLAY`，减少撕裂。
+- [x] 确认是否可以使用 page flip、双缓冲或 `FBIOPAN_DISPLAY`，减少撕裂；当前 fbdev 只有一屏显存，`FBIOPAN_DISPLAY` 双缓冲不可用。
 - [ ] 评估是否需要保留 `msync`；当前每帧全屏同步可能影响性能。
 - [ ] 增加屏幕旋转和横竖屏方向配置。
 - [ ] 对 framebuffer 映射范围、边界和异常设备状态增加更严格的检查。
 
 ### P0：触摸输入适配完善
 
-- [ ] 支持通过设备扫描或配置文件选择触摸设备，而不是长期依赖 `/dev/input/event0`。
-- [ ] 增加触摸坐标校准和 X/Y 方向翻转配置。
-- [ ] 根据实际触摸驱动验证多点触摸 slot、手指数和异常抬起事件。
+- [x] 支持通过设备扫描或配置文件选择触摸设备，而不是长期依赖 `/dev/input/event0`。
+- [x] 增加触摸坐标校准和 X/Y 方向翻转配置。
+- [x] 根据实际触摸驱动验证多点触摸 slot、手指数和异常抬起事件。
 - [ ] 增加触摸设备断开、事件溢出和状态恢复处理。
-- [ ] 明确单点触摸、多点触摸、拖动、点击和长按在 PocketJS runtime 中的统一语义。
+- [x] 明确单点触摸、多点触摸、拖动、点击和长按在 PocketJS runtime 中的统一语义；当前 host 选择第一个活动 contact 映射到 PocketJS 单点触摸，点击和拖动已由 demo 验证，长按暂不单独定义。
 
 ### P1：渲染性能
 
+- [x] 增加独立的全屏纯色 framebuffer 基准程序，用于排除 PocketJS/QuickJS/Rust core 干扰并观察优化效果。
 - [ ] 使用 PocketJS runtime 的 damage 信息，只更新发生变化的 framebuffer 区域。
 - [ ] 对全屏 BGRA 到 RGB565 转换做基准测试，确认 CPU 占用和可接受帧率。
 - [ ] 测量 QuickJS 启动时间、guest 执行时间、Rust 渲染时间和 framebuffer 提交时间。
@@ -87,7 +88,7 @@ Solid JSX guest
 - [ ] 测试多张图片、透明 PNG、不同尺寸图片和多纹理同时显示。
 - [ ] 测试图片缩放、线性采样、最近邻采样和裁剪边界。
 - [ ] 测试字体、中文字体和更长文本的打包及显示。
-- [ ] 增加常用 UI 控件状态：普通、按下、禁用、聚焦和选中。
+- [x] 增加常用 UI 控件状态：普通、按下、聚焦和选中；当前 demo 包含按钮、开关、横向触摸滑动条和纵向拖动滚动区域。
 - [ ] 增加滚动容器、列表和页面切换等真实应用需要的交互。
 - [ ] 验证更多原生时间线动画在 RV1106 上的长期运行表现。
 

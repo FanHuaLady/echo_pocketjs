@@ -4,8 +4,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BOARD="${RV1106_BOARD:-root@192.168.9.121}"
-REMOTE_DIR="${RV1106_REMOTE_DIR:-/root/Flower/04_hello_rust}"
+: "${RV1106_BOARD:?set RV1106_BOARD=root@your-board-ip}"
+REMOTE_DIR="${RV1106_REMOTE_DIR:-/root/pocketjs-rv1106}"
 
 HOST="${PROJECT_DIR}/build/rv1106-release/pocket_host"
 GUEST_JS="${PROJECT_DIR}/build/guest/display_demo.js"
@@ -18,5 +18,6 @@ for file in "${HOST}" "${GUEST_JS}" "${GUEST_PAK}"; do
     fi
 done
 
-scp "${HOST}" "${GUEST_JS}" "${GUEST_PAK}" "${BOARD}:${REMOTE_DIR}/"
-ssh "${BOARD}" "cd '${REMOTE_DIR}' && chmod +x pocket_host && ./pocket_host display_demo.js display_demo.pak 0"
+ssh "${RV1106_BOARD}" "mkdir -p '${REMOTE_DIR}'"
+scp "${HOST}" "${GUEST_JS}" "${GUEST_PAK}" "${RV1106_BOARD}:${REMOTE_DIR}/"
+ssh "${RV1106_BOARD}" "cd '${REMOTE_DIR}' && chmod +x pocket_host && ./pocket_host display_demo.js display_demo.pak 0"

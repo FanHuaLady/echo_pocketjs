@@ -36,6 +36,11 @@ add_executable(pocket_host
     "${POCKETJS_RUNTIME_C}"
 )
 
+add_executable(fb_bench
+    tests/fb_bench.c
+    src/device/framebuffer.c
+)
+
 target_include_directories(pocket_host
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -45,14 +50,27 @@ target_include_directories(pocket_host
         "${POCKETJS_DIR}/contracts/generated"
 )
 
+target_include_directories(fb_bench
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
 target_compile_definitions(pocket_host
     PRIVATE
         POCKETJS_TARGET_ID="rv1106"
         POCKETJS_HOST_ABI=1
         POCKET_RASTER_DENSITY=1
+        POCKET_RUNTIME_HARNESS
 )
 
 target_compile_options(pocket_host
+    PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+)
+
+target_compile_options(fb_bench
     PRIVATE
         -Wall
         -Wextra

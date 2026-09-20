@@ -1,4 +1,4 @@
-# 06_pocketjs_rv1106
+# pocketjs-rv1106
 
 PocketJS 在 RV1106 Linux/uClibc 开发板上的移植工程。
 
@@ -34,6 +34,9 @@ src/
   runtime/
     guest_file.c             guest.js/pak 文件读取
 
+tests/
+  fb_bench.c                 framebuffer 全屏纯色基准测试
+
 include/
   device/
     framebuffer.h
@@ -60,7 +63,7 @@ build/
   guest/                    guest.js 和 guest.pak 构建目录
 ```
 
-结构上参考 `03_music_player`：设备适配位于 `src/device`，运行时和应用逻辑分开，头文件统一放在 `include`，构建输出统一放在 `build`。
+工程结构按常见嵌入式应用方式组织：设备适配位于 `src/device`，运行时和应用逻辑分开，头文件统一放在 `include`，测试工具放在 `tests`，构建输出统一放在 `build`。
 
 ## 环境
 
@@ -71,16 +74,31 @@ build/
 - Bun
 - CMake
 
-默认 SDK 路径：
-
-```text
-/home/flower/Echo-Mate/SDK/rv1106-sdk
-```
-
-可以通过环境变量覆盖：
+设置 SDK 路径：
 
 ```bash
 export ECHO_SDK_ROOT=/path/to/rv1106-sdk
+```
+
+如果不设置，CMake toolchain 和构建脚本会尝试使用：
+
+```text
+/opt/rv1106-sdk
+```
+
+## 获取源码
+
+本项目使用 submodule 引入 PocketJS 和 QuickJS：
+
+```bash
+git clone --recursive https://github.com/your-name/pocketjs-rv1106.git
+cd pocketjs-rv1106
+```
+
+如果 clone 时没有加 `--recursive`：
+
+```bash
+git submodule update --init --recursive
 ```
 
 ## 首次准备
@@ -128,6 +146,7 @@ cmake --build --preset rv1106-release
 
 ```text
 build/rv1106-release/pocket_host
+build/rv1106-release/fb_bench
 ```
 
 ### 4. 编译 PocketJS guest
@@ -145,16 +164,11 @@ build/guest/display_demo.pak
 
 ## 部署和运行
 
-默认开发板：
+设置开发板地址和远程目录：
 
-```text
-root@192.168.9.121
-```
-
-默认远程目录：
-
-```text
-/root/Flower/04_hello_rust
+```bash
+export RV1106_BOARD=root@你开发板的IP
+export RV1106_REMOTE_DIR=/root/pocketjs-rv1106
 ```
 
 执行：
@@ -166,12 +180,12 @@ root@192.168.9.121
 也可以覆盖目标：
 
 ```bash
-RV1106_BOARD=root@192.168.9.121 \
-RV1106_REMOTE_DIR=/root/Flower/04_hello_rust \
+RV1106_BOARD=root@你开发板的IP \
+RV1106_REMOTE_DIR=/root/pocketjs-rv1106 \
 ./tools/deploy_guest_rv1106.sh
 ```
 
-native host 默认持续运行；传入帧数可以执行有限帧测试。当前已接入 `/dev/input/event0` 的 FocalTech 单指触摸，PocketJS guest 使用 `onPress` 接收点击。
+native host 默认持续运行；传入帧数可以执行有限帧测试。当前已接入 Linux evdev 触摸输入，PocketJS guest 使用 `onPress` 和 `touches()` 接收点击、开关和滑动条交互。
 
 直接运行：
 
@@ -179,14 +193,29 @@ native host 默认持续运行；传入帧数可以执行有限帧测试。当�
 ./pocket_host display_demo.js display_demo.pak 0
 ```
 
-最后的 `0` 表示无限循环；需要停止时按 `Ctrl-C`。触摸设备默认使用 `/dev/input/event0`，也可以覆盖：
+最后的 `0` 表示无限循环；需要停止时按 `Ctrl-C`。触摸设备默认自动扫描 `/dev/input/event*`，也可以覆盖：
 
 ```bash
 RV1106_TOUCH_DEVICE=/dev/input/event0 \
 ./pocket_host display_demo.js display_demo.pak 0
 ```
 
-当前 demo 中的 `TOUCH BUTTON` 使用 PocketJS 的 `focusable + onPress`，触摸按下、移动、抬起由 host 转成每帧 contact，PocketJS 负责命中测试、按压状态和回调。
+触摸坐标校准和方向可以通过环境变量配置：
+
+```bash
+RV1106_TOUCH_MIN_X=0 \
+RV1106_TOUCH_MAX_X=320 \
+RV1106_TOUCH_MIN_Y=0 \
+RV1106_TOUCH_MAX_Y=240 \
+RV1106_TOUCH_FLIP_X=0 \
+RV1106_TOUCH_FLIP_Y=0 \
+RV1106_TOUCH_SWAP_XY=0 \
+./pocket_host display_demo.js display_demo.pak 0
+```
+
+当前 demo 中的按钮和开关使用 PocketJS 的 `focusable + onPress`。横向滑动条每帧读取 `touches()` 的坐标，按手指位置更新数值。主内容区域高度大于屏幕可视区域，可以上下拖动滚动，右侧滚动条显示当前位置，用于验证超出屏幕后的控件交互。触摸按下、移动、抬起由 host 转成每帧 contact，PocketJS 负责命中测试、按压状态和回调。
+
+host 已接入 `SIGINT` 和 `SIGTERM`，退出时会关闭 PocketJS runtime、触摸设备和 framebuffer。帧循环使用 `CLOCK_MONOTONIC` 做 60 Hz 调度，并统计实际 FPS 和 dropped frames。demo 左上角的 `FPS` 数字来自 host 每秒上报的真实帧统计。
 
 图片测试使用 `img/flower.jpg`。PocketJS 的官方打包器接收 PNG/SVG，构建前会将这张 `130x130` JPEG 转成 `256x256` PNG，再按 `Image src="flower.png"` 打包为 `ui:img.flower.png`。
 
@@ -209,6 +238,48 @@ flower.jpg
 `src` 是资源名，不是文件路径。`Image` 首次创建时，框架根据资源名找到已注册的纹理句柄，然后调用 `setImage`；图片像素不会经过应用层的 C 数组。当前 `images.json` 设置了 `linear: true`，缩放时使用线性采样；不设置时默认使用最近邻采样。
 
 当前例程使用一张图片显示为 `96x96`，验证的是资源加载、纹理绑定和运行时缩放。原始图片只打包一份，由一个 Image 节点引用。
+
+## Framebuffer 基准测试
+
+`fb_bench` 位于 `tests/fb_bench.c`，是独立的 framebuffer 测试程序，不经过 PocketJS、QuickJS 或 Rust UI core。它只做全屏纯色快速切换，用于测试 `/dev/fb0` 的基础吞吐、`msync` 成本和 fbdev 双缓冲/page flip 支持情况。
+
+用法：
+
+```bash
+./fb_bench [auto|single|single-msync|pan|pan-msync] [seconds]
+```
+
+模式：
+
+- `auto`：优先尝试双缓冲 pan，失败后退回单缓冲。
+- `single`：单缓冲全屏填色，不主动 `msync`。
+- `single-msync`：单缓冲全屏填色，每帧 `msync`。
+- `pan`：双缓冲填色后 `FBIOPAN_DISPLAY`。
+- `pan-msync`：双缓冲填色、`msync`、再 `FBIOPAN_DISPLAY`。
+
+`seconds` 为 `0` 或省略时持续运行，按 `Ctrl-C` 或发送 `SIGTERM` 停止。
+
+当前 RV1106 开发板实测：
+
+```text
+auto:
+  framebuffer double buffer unavailable: yres_virtual=240 smem_len=153600 required=307200
+  mode=single msync=no pan=no buffers=1
+  fps ~= 472
+
+single-msync:
+  fps ~= 135-143
+
+single:
+  fps ~= 461-477
+```
+
+结论：
+
+- 当前 fbdev 只暴露一屏显存，`yres_virtual` 不能扩展到两屏。
+- 目前不能通过 `FBIOPAN_DISPLAY` 做 fbdev 双缓冲/page flip。
+- 全屏纯色填充本身很快，PocketJS demo 的 `~27 FPS` 主要不是 framebuffer 纯写入上限导致。
+- 后续更值得优先优化的是 PocketJS 软件渲染、BGRA 到 RGB565 转换、damage 局部刷新和每帧同步策略。
 
 ## 当前边界
 
