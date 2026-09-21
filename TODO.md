@@ -54,7 +54,7 @@ Solid JSX guest
 
 - [x] 增加 `SIGINT`、`SIGTERM` 处理，确保退出时正确关闭 framebuffer、触摸设备和 PocketJS runtime。
 - [x] 将固定的 `nanosleep` 帧循环改为基于单调时钟的帧调度，记录实际 FPS 和丢帧情况；当前 demo 左上角显示 host 统计的 FPS。
-- [ ] 增加统一的 host 日志等级和错误码，方便在开发板上定位启动、资源和渲染错误。
+- [x] 增加统一的 host 日志等级和错误码，方便在开发板上定位启动、资源和渲染错误；当前已支持 `RV1106_LOG_LEVEL`，runtime 错误包含组件上下文。
 - [ ] 检查 guest、`.pak`、QuickJS 和 Rust core 的内存释放路径。
 - [ ] 增加长时间运行测试，至少验证连续运行数小时后的内存、帧率和触摸状态。
 
@@ -64,20 +64,20 @@ Solid JSX guest
 - [x] 确认是否可以使用 page flip、双缓冲或 `FBIOPAN_DISPLAY`，减少撕裂；当前 fbdev 只有一屏显存，`FBIOPAN_DISPLAY` 双缓冲不可用。
 - [ ] 评估是否需要保留 `msync`；当前每帧全屏同步可能影响性能。
 - [x] 增加屏幕旋转和横竖屏方向配置；host 支持 `RV1106_DISPLAY_ROTATION=0/90/180/270` 和 `RV1106_DISPLAY_ORIENTATION=landscape/portrait`，软件旋转 framebuffer，并同步变换触摸坐标。
-- [ ] 对 framebuffer 映射范围、边界和异常设备状态增加更严格的检查。
+- [x] 对 framebuffer 映射范围、边界和异常设备状态增加更严格的检查；启动时验证虚拟分辨率、stride、offset、RGB565 bitfield 和显存长度。
 
 ### P0：触摸输入适配完善
 
 - [x] 支持通过设备扫描或配置文件选择触摸设备，而不是长期依赖 `/dev/input/event0`。
 - [x] 增加触摸坐标校准和 X/Y 方向翻转配置。
 - [x] 根据实际触摸驱动验证多点触摸 slot、手指数和异常抬起事件。
-- [ ] 增加触摸设备断开、事件溢出和状态恢复处理。
+- [x] 增加触摸设备断开、事件溢出和状态恢复处理；`SYN_DROPPED`、EOF 和读取错误会清除当前 contact，自动重连暂未实现。
 - [x] 明确单点触摸、多点触摸、拖动、点击和长按在 PocketJS runtime 中的统一语义；当前 host 选择第一个活动 contact 映射到 PocketJS 单点触摸，点击和拖动已由 demo 验证，长按暂不单独定义。
 
 ### P1：渲染性能
 
 - [x] 增加独立的全屏纯色 framebuffer 基准程序，用于排除 PocketJS/QuickJS/Rust core 干扰并观察优化效果。
-- [ ] 使用 PocketJS runtime 的 damage 信息，只更新发生变化的 framebuffer 区域。
+- [x] 使用 PocketJS runtime 的 damage 信息，只更新发生变化的 framebuffer 区域；无变化帧跳过 RGB565 转换和 `msync`。
 - [ ] 对全屏 BGRA 到 RGB565 转换做基准测试，确认 CPU 占用和可接受帧率。
 - [ ] 测量 QuickJS 启动时间、guest 执行时间、Rust 渲染时间和 framebuffer 提交时间。
 - [ ] 测量不同图片尺寸、透明度、缩放比例和动画数量下的内存占用。
@@ -119,12 +119,10 @@ Solid JSX guest
 
 按以下顺序推进：
 
-1. 完成 framebuffer 参数验证和基础性能统计。
-2. 实现 damage 区域局部刷新。
-3. 完善触摸校准、设备配置和异常恢复。
-4. 做长时间运行和内存稳定性测试。
-5. 在稳定基础上扩展多图片、文本、列表和页面交互。
-6. 最后根据实际产品需求评估音频、网络和存储等平台能力。
+1. 检查 guest、`.pak`、QuickJS 和 Rust core 的内存释放路径。
+2. 做开发板长时间运行和内存稳定性测试。
+3. 在稳定基础上扩展多图片、文本、列表和页面交互。
+4. 最后根据实际产品需求评估音频、网络和存储等平台能力。
 
 ## 当前暂不做
 

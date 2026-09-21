@@ -1,4 +1,5 @@
 #include "device/touchscreen.h"
+#include "runtime/host_log.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -114,6 +115,17 @@ static void reset_slots(struct touchscreen *touchscreen)
     }
 }
 
+static void reset_contact_state(struct touchscreen *touchscreen)
+{
+    reset_slots(touchscreen);
+    touchscreen->tracking_id = -1;
+    touchscreen->button_down = 0;
+    touchscreen->has_x = 0;
+    touchscreen->has_y = 0;
+    touchscreen->down = 0;
+    touchscreen->resync_pending = 0;
+}
+
 static int configure_touchscreen_ranges(struct touchscreen *touchscreen)
 {
     int mt_min_x;
@@ -183,7 +195,7 @@ static int touchscreen_open_path(
 )
 {
     memset(touchscreen, 0, sizeof(*touchscreen));
-    reset_slots(touchscreen);
+    reset_contact_state(touchscreen);
     touchscreen->fd = open(path, O_RDONLY | O_NONBLOCK);
     if (touchscreen->fd < 0) {
         if (!quiet) {
@@ -377,9 +389,44 @@ void touchscreen_poll(struct touchscreen *touchscreen)
         if (size < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) break;
             if (errno == EINTR) continue;
+            touchscreen->disconnected = 1;
+            reset_contact_state(touchscreen);
+            HOST_LOG_WARNF("touch", "read failed: %s", strerror(errno));
             break;
         }
-        if (size != (ssize_t)sizeof(event)) break;
+        if (size == 0) {
+            touchscreen->disconnected = 1;
+            reset_contact_state(touchscreen);
+            HOST_LOG_WARNF("touch", "%s", "touchscreen returned EOF");
+            break;
+        }
+        if (size != (ssize_t)sizeof(event)) {
+            HOST_LOG_WARNF("touch", "short evdev read: %zd bytes", size);
+            break;
+        }
+
+        if (event.type == EV_SYN && event.code == SYN_DROPPED) {
+            touchscreen->sync_dropped++;
+            touchscreen->resync_pending = 1;
+            reset_slots(touchscreen);
+            touchscreen->tracking_id = -1;
+            touchscreen->button_down = 0;
+            touchscreen->has_x = 0;
+            touchscreen->has_y = 0;
+            touchscreen->down = 0;
+            HOST_LOG_WARNF(
+                "touch",
+                "evdev SYN_DROPPED count=%lu; discarding until SYN_REPORT",
+                touchscreen->sync_dropped
+            );
+            continue;
+        }
+        if (touchscreen->resync_pending) {
+            if (event.type == EV_SYN && event.code == SYN_REPORT) {
+                touchscreen->resync_pending = 0;
+            }
+            continue;
+        }
 
         if (event.type == EV_ABS) {
             switch (event.code) {

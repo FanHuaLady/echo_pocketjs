@@ -38,6 +38,9 @@ struct touchscreen {
     int down;
     int x;
     int y;
+    unsigned long sync_dropped;
+    int disconnected;
+    int resync_pending;
 };
 
 int touchscreen_open(

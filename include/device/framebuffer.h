@@ -40,5 +40,13 @@ int framebuffer_present_bgra(
     uint32_t height,
     uint32_t stride
 );
+int framebuffer_present_bgra_damage(
+    struct framebuffer *framebuffer,
+    const uint8_t *bgra,
+    uint32_t width,
+    uint32_t height,
+    uint32_t stride,
+    const int *bounds
+);
 
 #endif

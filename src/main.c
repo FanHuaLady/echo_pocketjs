@@ -2,6 +2,7 @@
 #include "device/touchscreen.h"
 #include "pocket_runtime.h"
 #include "runtime/guest_file.h"
+#include "runtime/host_log.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -109,12 +110,18 @@ int main(int argc, char **argv)
     unsigned long frames_presented = 0;
     unsigned long dropped_frames = 0;
     unsigned long sample_frames = 0;
+    unsigned long damage_frames = 0;
+    unsigned long full_present_frames = 0;
+    unsigned long empty_damage_frames = 0;
     long long next_frame_ns;
     long long sample_start_ns;
     int previous_touch_down = 0;
     int touch_hit = 0;
+    int first_render = 1;
     int exit_code = 0;
     int ok;
+
+    host_log_init();
 
     if (argc < 2 || argc > 4) {
         fprintf(stderr, "usage: %s guest.js [guest.pak] [frames]\n", argv[0]);
@@ -153,7 +160,7 @@ int main(int argc, char **argv)
         framebuffer.rotation,
         &touchscreen
     ) != 0) {
-        fprintf(stderr, "touchscreen input disabled\n");
+        HOST_LOG_WARNF("main", "%s", "touchscreen input disabled");
     }
 
     ok = pocket_runtime_boot(
@@ -166,12 +173,20 @@ int main(int argc, char **argv)
     );
     free(script);
     if (!ok) {
-        fprintf(stderr, "PocketJS boot failed: %s\n", pocket_runtime_error());
+        HOST_LOG_ERRORF(
+            "runtime",
+            "PocketJS boot failed: %s",
+            pocket_runtime_error()
+        );
         exit_code = 1;
         goto cleanup_devices;
     }
     if (!pocket_runtime_harness_bind("__rv1106HostStats")) {
-        fprintf(stderr, "PocketJS stats bridge disabled: %s\n", pocket_runtime_error());
+        HOST_LOG_WARNF(
+            "runtime",
+            "PocketJS stats bridge disabled: %s",
+            pocket_runtime_error()
+        );
     }
 
     next_frame_ns = monotonic_ns();
@@ -207,26 +222,54 @@ int main(int argc, char **argv)
 
         ok = pocket_runtime_tick(&frame_input);
         if (!ok) {
-            fprintf(stderr, "PocketJS tick failed: %s\n", pocket_runtime_error());
+            HOST_LOG_ERRORF(
+                "runtime",
+                "PocketJS tick failed: %s",
+                pocket_runtime_error()
+            );
             exit_code = 1;
             goto cleanup_runtime;
         }
 
         rendered = pocket_runtime_render();
         if (rendered == NULL) {
-            fprintf(stderr, "PocketJS render failed: %s\n", pocket_runtime_error());
+            HOST_LOG_ERRORF(
+                "runtime",
+                "PocketJS render failed: %s",
+                pocket_runtime_error()
+            );
             exit_code = 1;
             goto cleanup_runtime;
         }
-        if (framebuffer_present_bgra(
-            &framebuffer,
-            rendered,
-            pocket_runtime_width(),
-            pocket_runtime_height(),
-            pocket_runtime_stride()
-        ) != 0) {
-            exit_code = 1;
-            goto cleanup_runtime;
+        {
+            int damage_bounds[4];
+            int has_damage = pocket_runtime_damage_bounds(damage_bounds);
+            const int *present_bounds = NULL;
+
+            if (!first_render && !has_damage) {
+                empty_damage_frames++;
+            } else {
+                if (first_render || !has_damage) {
+                    full_present_frames++;
+                } else {
+                    damage_frames++;
+                    present_bounds = damage_bounds;
+                }
+            }
+            if (first_render || has_damage) {
+                if (framebuffer_present_bgra_damage(
+                    &framebuffer,
+                    rendered,
+                    pocket_runtime_width(),
+                    pocket_runtime_height(),
+                    pocket_runtime_stride(),
+                    present_bounds
+                ) != 0) {
+                    exit_code = 1;
+                    goto cleanup_runtime;
+                }
+            }
+            first_render = 0;
         }
 
         frames_presented++;
@@ -247,8 +290,12 @@ int main(int argc, char **argv)
                     HOST_STATS_OPCODE_FPS,
                     fps,
                     NULL
-                )) {
-                fprintf(stderr, "PocketJS stats update failed: %s\n", pocket_runtime_error());
+            )) {
+                HOST_LOG_ERRORF(
+                    "runtime",
+                    "PocketJS stats update failed: %s",
+                    pocket_runtime_error()
+                );
                 exit_code = 1;
                 goto cleanup_runtime;
             }
@@ -272,13 +319,17 @@ int main(int argc, char **argv)
     }
 
     printf(
-        "PocketJS frames presented: %lu, dropped=%lu, %ux%u stride=%u damage_pixels=%lu\n",
+        "PocketJS frames presented: %lu, dropped=%lu, %ux%u stride=%u "
+        "damage_pixels=%lu damage_frames=%lu full_present=%lu empty_damage=%lu\n",
         frames_presented,
         dropped_frames,
         pocket_runtime_width(),
         pocket_runtime_height(),
         pocket_runtime_stride(),
-        pocket_runtime_damage_pixels()
+        pocket_runtime_damage_pixels(),
+        damage_frames,
+        full_present_frames,
+        empty_damage_frames
     );
 
 cleanup_runtime:

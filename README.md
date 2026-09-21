@@ -34,6 +34,7 @@ src/
     touchscreen.c            Linux evdev 单指触摸适配
   runtime/
     guest_file.c             guest.js/pak 文件读取
+    host_log.c               host 日志等级和统一输出
 
 tests/
   fb_bench.c                 framebuffer 全屏纯色基准测试
@@ -215,6 +216,17 @@ RV1106_TOUCH_SWAP_XY=0 \
 ./pocket_host display_demo.js display_demo.pak 0
 ```
 
+host 日志等级可以通过环境变量控制，默认是 `info`：
+
+```bash
+RV1106_LOG_LEVEL=debug \
+./pocket_host display_demo.js display_demo.pak 0
+```
+
+支持 `error`、`warn`、`info` 和 `debug`。触摸设备出现
+`SYN_DROPPED`、EOF 或读错误时，host 会清除当前触点，避免控件长期保持
+按下状态；自动重新打开已经断开的设备仍需要结合具体驱动行为单独验证。
+
 显示方向通过环境变量配置。默认保持 framebuffer 原始方向；也可以指定
 `0`、`90`、`180` 或 `270` 度。`RV1106_DISPLAY_ORIENTATION` 是便捷配置，
 可填写 `landscape` 或 `portrait`，如果两个变量同时设置，精确角度优先：
@@ -231,6 +243,11 @@ RV1106_DISPLAY_ROTATION=90 \
 当前 demo 中的按钮和开关使用 PocketJS 的 `focusable + onPress`。横向滑动条每帧读取 `touches()` 的坐标，按手指位置更新数值。主内容区域高度大于屏幕可视区域，可以上下拖动滚动，右侧滚动条显示当前位置，用于验证超出屏幕后的控件交互。触摸按下、移动、抬起由 host 转成每帧 contact，PocketJS 负责命中测试、按压状态和回调。
 
 host 已接入 `SIGINT` 和 `SIGTERM`，退出时会关闭 PocketJS runtime、触摸设备和 framebuffer。帧循环使用 `CLOCK_MONOTONIC` 做 60 Hz 调度，并统计实际 FPS 和 dropped frames。demo 左上角的 `FPS` 数字来自 host 每秒上报的真实帧统计。
+
+host 已使用 PocketJS runtime 的 damage bounds 做局部 framebuffer 提交：
+首帧全屏转换，后续只转换发生变化的逻辑矩形；没有变化的帧跳过 RGB565
+转换和 `msync`。退出统计中的 `damage_frames`、`full_present` 和
+`empty_damage` 可用于确认局部刷新是否生效。
 
 图片测试使用 `img/flower.jpg`。PocketJS 的官方打包器接收 PNG/SVG，构建前会将这张 `130x130` JPEG 转成 `256x256` PNG，再按 `Image src="flower.png"` 打包为 `ui:img.flower.png`。
 

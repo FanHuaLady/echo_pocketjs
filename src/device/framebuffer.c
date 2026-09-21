@@ -59,6 +59,36 @@ static uint16_t pack_rgb(
     return (uint16_t)pixel;
 }
 
+static int framebuffer_validate_layout(
+    const struct fb_fix_screeninfo *fixed,
+    const struct fb_var_screeninfo *variable
+)
+{
+    size_t visible_bytes;
+
+    if (variable->xres == 0 ||
+        variable->yres == 0 ||
+        variable->xres_virtual < variable->xres ||
+        variable->yres_virtual < variable->yres ||
+        fixed->line_length < variable->xres * 2U) {
+        return -1;
+    }
+    if (variable->xoffset > variable->xres_virtual - variable->xres ||
+        variable->yoffset > variable->yres_virtual - variable->yres) {
+        return -1;
+    }
+    if (variable->red.offset + variable->red.length > variable->bits_per_pixel ||
+        variable->green.offset + variable->green.length > variable->bits_per_pixel ||
+        variable->blue.offset + variable->blue.length > variable->bits_per_pixel) {
+        return -1;
+    }
+    visible_bytes = (size_t)fixed->line_length * variable->yres;
+    if (fixed->smem_len < visible_bytes) {
+        return -1;
+    }
+    return 0;
+}
+
 int framebuffer_open(const char *path, struct framebuffer *framebuffer)
 {
     enum display_rotation rotation;
@@ -87,8 +117,20 @@ int framebuffer_open(const char *path, struct framebuffer *framebuffer)
         return -1;
     }
     if (framebuffer->variable.bits_per_pixel != 16 ||
-        framebuffer->fixed.smem_len == 0) {
-        fprintf(stderr, "unsupported framebuffer format\n");
+        framebuffer_validate_layout(
+            &framebuffer->fixed,
+            &framebuffer->variable
+        ) != 0) {
+        fprintf(stderr,
+                "unsupported or invalid framebuffer layout: "
+                "%ux%u virtual=%ux%u bpp=%u stride=%u smem_len=%u\n",
+                framebuffer->variable.xres,
+                framebuffer->variable.yres,
+                framebuffer->variable.xres_virtual,
+                framebuffer->variable.yres_virtual,
+                framebuffer->variable.bits_per_pixel,
+                framebuffer->fixed.line_length,
+                framebuffer->fixed.smem_len);
         close(framebuffer->fd);
         framebuffer->fd = -1;
         return -1;
@@ -299,12 +341,13 @@ int framebuffer_sync(struct framebuffer *framebuffer)
     return 0;
 }
 
-int framebuffer_present_bgra(
+static int framebuffer_present_bgra_rect(
     struct framebuffer *framebuffer,
     const uint8_t *bgra,
     uint32_t width,
     uint32_t height,
-    uint32_t stride
+    uint32_t stride,
+    const int *bounds
 )
 {
     uint32_t copy_width = width < framebuffer->logical_width
@@ -313,13 +356,38 @@ int framebuffer_present_bgra(
     uint32_t copy_height = height < framebuffer->logical_height
         ? height
         : framebuffer->logical_height;
-    uint32_t y;
+    int x0 = 0;
+    int y0 = 0;
+    int x1 = (int)copy_width;
+    int y1 = (int)copy_height;
+    int y;
 
-    for (y = 0; y < copy_height; y++) {
-        uint32_t x;
+    if (framebuffer->memory == NULL ||
+        bgra == NULL ||
+        width == 0 ||
+        height == 0 ||
+        stride < width * 4U) {
+        return -1;
+    }
+    if (bounds != NULL) {
+        x0 = bounds[0];
+        y0 = bounds[1];
+        x1 = bounds[2];
+        y1 = bounds[3];
+    }
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > (int)copy_width) x1 = (int)copy_width;
+    if (y1 > (int)copy_height) y1 = (int)copy_height;
+    if (x1 <= x0 || y1 <= y0) {
+        return 0;
+    }
+
+    for (y = y0; y < y1; y++) {
+        int x;
         const uint8_t *source = bgra + (size_t)y * stride;
 
-        for (x = 0; x < copy_width; x++) {
+        for (x = x0; x < x1; x++) {
             const uint8_t *pixel = source + (size_t)x * 4U;
             int physical_x;
             int physical_y;
@@ -334,8 +402,8 @@ int framebuffer_present_bgra(
             );
 
             display_map_logical_to_physical(
-                (int)x,
-                (int)y,
+                x,
+                y,
                 (int)framebuffer->variable.xres,
                 (int)framebuffer->variable.yres,
                 framebuffer->rotation,
@@ -354,4 +422,41 @@ int framebuffer_present_bgra(
     }
 
     return framebuffer_sync(framebuffer);
+}
+
+int framebuffer_present_bgra(
+    struct framebuffer *framebuffer,
+    const uint8_t *bgra,
+    uint32_t width,
+    uint32_t height,
+    uint32_t stride
+)
+{
+    return framebuffer_present_bgra_rect(
+        framebuffer,
+        bgra,
+        width,
+        height,
+        stride,
+        NULL
+    );
+}
+
+int framebuffer_present_bgra_damage(
+    struct framebuffer *framebuffer,
+    const uint8_t *bgra,
+    uint32_t width,
+    uint32_t height,
+    uint32_t stride,
+    const int *bounds
+)
+{
+    return framebuffer_present_bgra_rect(
+        framebuffer,
+        bgra,
+        width,
+        height,
+        stride,
+        bounds
+    );
 }
