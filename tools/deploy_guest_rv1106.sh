@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 : "${RV1106_BOARD:?set RV1106_BOARD=root@your-board-ip}"
-REMOTE_DIR="${RV1106_REMOTE_DIR:-/root/pocketjs-rv1106}"
+REMOTE_DIR="${RV1106_REMOTE_DIR:-/root/Flower/04_hello_rust}"
 
 HOST="${PROJECT_DIR}/build/rv1106-release/pocket_host"
 GUEST_JS="${PROJECT_DIR}/build/guest/display_demo.js"

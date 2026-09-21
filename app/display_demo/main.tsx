@@ -18,9 +18,34 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+function Switch() {
+  const [enabled, setEnabled] = createSignal(true);
+
+  const trackClass = () =>
+    enabled()
+      ? "w-[48] h-[24] rounded-[12] bg-[#2f9e44] border-[1] border-[#6bd98a] flex-row items-center p-[3]"
+      : "w-[48] h-[24] rounded-[12] bg-[#2c3f55] border-[1] border-[#48627d] flex-row items-center p-[3]";
+
+  const knobClass = () =>
+    enabled()
+      ? "w-[18] h-[18] rounded-full bg-[#f4f7fb] translate-x-[24]"
+      : "w-[18] h-[18] rounded-full bg-[#f4f7fb]";
+
+  return (
+    <View
+      class={trackClass()}
+      focusable
+      onPress={() => setEnabled(!enabled())}
+    >
+      <View class={knobClass()} />
+    </View>
+  );
+}
+
+// App 是一个普通函数，但它的返回值不是字符串，而是 JSX
+// PocketJS 界面 = 一个返回 JSX 的函数
 function App() {
   const [tapped, setTapped] = createSignal(false);
-  const [enabled, setEnabled] = createSignal(true);
   const [wifi, setWifi] = createSignal(false);
   const [mode, setMode] = createSignal(0);
   const [level, setLevel] = createSignal(50);
@@ -63,14 +88,6 @@ function App() {
     }
   });
 
-  const switchClass = () =>
-    enabled()
-      ? "w-[48] h-[24] rounded-[12] bg-[#2f9e44] border-[1] border-[#6bd98a] flex-row items-center p-[3]"
-      : "w-[48] h-[24] rounded-[12] bg-[#2c3f55] border-[1] border-[#48627d] flex-row items-center p-[3]";
-  const switchKnobClass = () =>
-    enabled()
-      ? "w-[18] h-[18] rounded-full bg-[#f4f7fb] translate-x-[24]"
-      : "w-[18] h-[18] rounded-full bg-[#f4f7fb]";
   const wifiClass = () =>
     wifi()
       ? "w-[48] h-[24] rounded-[12] bg-[#146c94] border-[1] border-[#70d6ff] flex-row items-center p-[3]"
@@ -111,9 +128,7 @@ function App() {
 
               <View class="flex-row items-center justify-between">
                 <Text class="text-xs text-[#c7d8e8] font-bold">SWITCH</Text>
-                <View class={switchClass()} focusable onPress={() => setEnabled(!enabled())}>
-                  <View class={switchKnobClass()} />
-                </View>
+                <Switch />
               </View>
             </View>
           </View>
@@ -194,4 +209,5 @@ function App() {
   );
 }
 
+// 调用时返回 App 组件
 mount(() => <App />);
