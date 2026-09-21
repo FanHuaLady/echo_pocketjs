@@ -146,8 +146,11 @@ int main(int argc, char **argv)
     }
     if (touchscreen_open(
         getenv("RV1106_TOUCH_DEVICE"),
+        (int)framebuffer.logical_width,
+        (int)framebuffer.logical_height,
         (int)framebuffer.variable.xres,
         (int)framebuffer.variable.yres,
+        framebuffer.rotation,
         &touchscreen
     ) != 0) {
         fprintf(stderr, "touchscreen input disabled\n");
@@ -158,8 +161,8 @@ int main(int argc, char **argv)
         script_length,
         pack,
         pack_length,
-        (int)framebuffer.variable.xres,
-        (int)framebuffer.variable.yres
+        (int)framebuffer.logical_width,
+        (int)framebuffer.logical_height
     );
     free(script);
     if (!ok) {

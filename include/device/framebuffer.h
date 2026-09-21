@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "device/orientation.h"
+
 struct framebuffer {
     int fd;
     size_t map_length;
@@ -13,6 +15,9 @@ struct framebuffer {
     struct fb_var_screeninfo variable;
     struct fb_var_screeninfo original_variable;
     int has_original_variable;
+    enum display_rotation rotation;
+    uint32_t logical_width;
+    uint32_t logical_height;
 };
 
 int framebuffer_open(const char *path, struct framebuffer *framebuffer);

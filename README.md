@@ -30,6 +30,7 @@ src/
   main.c                     native host 入口
   device/
     framebuffer.c            RV1106 framebuffer 适配
+    orientation.c            屏幕旋转和坐标变换
     touchscreen.c            Linux evdev 单指触摸适配
   runtime/
     guest_file.c             guest.js/pak 文件读取
@@ -40,6 +41,7 @@ tests/
 include/
   device/
     framebuffer.h
+    orientation.h
     touchscreen.h
   runtime/
     guest_file.h
@@ -212,6 +214,19 @@ RV1106_TOUCH_FLIP_Y=0 \
 RV1106_TOUCH_SWAP_XY=0 \
 ./pocket_host display_demo.js display_demo.pak 0
 ```
+
+显示方向通过环境变量配置。默认保持 framebuffer 原始方向；也可以指定
+`0`、`90`、`180` 或 `270` 度。`RV1106_DISPLAY_ORIENTATION` 是便捷配置，
+可填写 `landscape` 或 `portrait`，如果两个变量同时设置，精确角度优先：
+
+```bash
+RV1106_DISPLAY_ROTATION=90 \
+./pocket_host display_demo.js display_demo.pak 0
+```
+
+旋转由 host 在软件中完成。PocketJS 使用旋转后的逻辑宽高，触摸坐标会
+自动反向映射到同一个逻辑坐标系，因此不需要修改 guest UI 的布局和命中
+测试代码。
 
 当前 demo 中的按钮和开关使用 PocketJS 的 `focusable + onPress`。横向滑动条每帧读取 `touches()` 的坐标，按手指位置更新数值。主内容区域高度大于屏幕可视区域，可以上下拖动滚动，右侧滚动条显示当前位置，用于验证超出屏幕后的控件交互。触摸按下、移动、抬起由 host 转成每帧 contact，PocketJS 负责命中测试、按压状态和回调。
 

@@ -175,6 +175,9 @@ static int touchscreen_open_path(
     const char *path,
     int width,
     int height,
+    int physical_width,
+    int physical_height,
+    enum display_rotation rotation,
     struct touchscreen *touchscreen,
     int quiet
 )
@@ -191,6 +194,9 @@ static int touchscreen_open_path(
 
     touchscreen->width = width;
     touchscreen->height = height;
+    touchscreen->physical_width = physical_width;
+    touchscreen->physical_height = physical_height;
+    touchscreen->rotation = rotation;
     touchscreen->tracking_id = -1;
     touchscreen->flip_x = parse_bool_env("RV1106_TOUCH_FLIP_X");
     touchscreen->flip_y = parse_bool_env("RV1106_TOUCH_FLIP_Y");
@@ -224,6 +230,10 @@ static int touchscreen_open_path(
         touchscreen->flip_x,
         touchscreen->flip_y
     );
+    printf(
+        "touchscreen display rotation: %s\n",
+        display_rotation_name(rotation)
+    );
     return 0;
 }
 
@@ -231,6 +241,9 @@ int touchscreen_open(
     const char *path,
     int width,
     int height,
+    int physical_width,
+    int physical_height,
+    enum display_rotation rotation,
     struct touchscreen *touchscreen
 )
 {
@@ -238,12 +251,30 @@ int touchscreen_open(
     char candidate[32];
 
     if (path != NULL && path[0] != '\0') {
-        return touchscreen_open_path(path, width, height, touchscreen, 0);
+        return touchscreen_open_path(
+            path,
+            width,
+            height,
+            physical_width,
+            physical_height,
+            rotation,
+            touchscreen,
+            0
+        );
     }
 
     for (index = 0; index < TOUCHSCREEN_SCAN_LIMIT; index++) {
         snprintf(candidate, sizeof(candidate), "/dev/input/event%u", index);
-        if (touchscreen_open_path(candidate, width, height, touchscreen, 1) == 0) {
+        if (touchscreen_open_path(
+                candidate,
+                width,
+                height,
+                physical_width,
+                physical_height,
+                rotation,
+                touchscreen,
+                1
+            ) == 0) {
             return 0;
         }
     }
@@ -270,36 +301,48 @@ static void update_logical_position(struct touchscreen *touchscreen)
             touchscreen->raw_y,
             touchscreen->raw_min_y,
             touchscreen->raw_max_y,
-            touchscreen->width
+            touchscreen->physical_width
         );
         y = map_coordinate(
             touchscreen->raw_x,
             touchscreen->raw_min_x,
             touchscreen->raw_max_x,
-            touchscreen->height
+            touchscreen->physical_height
         );
     } else {
         x = map_coordinate(
             touchscreen->raw_x,
             touchscreen->raw_min_x,
             touchscreen->raw_max_x,
-            touchscreen->width
+            touchscreen->physical_width
         );
         y = map_coordinate(
             touchscreen->raw_y,
             touchscreen->raw_min_y,
             touchscreen->raw_max_y,
-            touchscreen->height
+            touchscreen->physical_height
         );
     }
     if (touchscreen->flip_x) {
-        x = touchscreen->width - 1 - x;
+        x = touchscreen->physical_width - 1 - x;
     }
     if (touchscreen->flip_y) {
-        y = touchscreen->height - 1 - y;
+        y = touchscreen->physical_height - 1 - y;
     }
-    touchscreen->x = clamp(x, 0, touchscreen->width - 1);
-    touchscreen->y = clamp(y, 0, touchscreen->height - 1);
+    touchscreen->x = clamp(x, 0, touchscreen->physical_width - 1);
+    touchscreen->y = clamp(y, 0, touchscreen->physical_height - 1);
+
+    display_map_physical_to_logical(
+        touchscreen->x,
+        touchscreen->y,
+        touchscreen->physical_width,
+        touchscreen->physical_height,
+        touchscreen->rotation,
+        &touchscreen->x,
+        &touchscreen->y
+    );
+    touchscreen->x = clamp(touchscreen->x, 0, touchscreen->width - 1);
+    touchscreen->y = clamp(touchscreen->y, 0, touchscreen->height - 1);
 }
 
 static void sync_active_multitouch_slot(struct touchscreen *touchscreen)

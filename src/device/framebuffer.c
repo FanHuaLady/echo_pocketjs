@@ -61,6 +61,11 @@ static uint16_t pack_rgb(
 
 int framebuffer_open(const char *path, struct framebuffer *framebuffer)
 {
+    enum display_rotation rotation;
+
+    framebuffer->rotation = DISPLAY_ROTATION_0;
+    framebuffer->logical_width = 0;
+    framebuffer->logical_height = 0;
     framebuffer->fd = open(path, O_RDWR);
     if (framebuffer->fd < 0) {
         fprintf(stderr, "cannot open %s: %s\n", path, strerror(errno));
@@ -88,6 +93,23 @@ int framebuffer_open(const char *path, struct framebuffer *framebuffer)
         framebuffer->fd = -1;
         return -1;
     }
+    if (display_rotation_from_env(
+            framebuffer->variable.xres,
+            framebuffer->variable.yres,
+            &rotation
+        ) != 0) {
+        close(framebuffer->fd);
+        framebuffer->fd = -1;
+        return -1;
+    }
+    framebuffer->rotation = rotation;
+    display_logical_dimensions(
+        framebuffer->variable.xres,
+        framebuffer->variable.yres,
+        rotation,
+        &framebuffer->logical_width,
+        &framebuffer->logical_height
+    );
     framebuffer->original_variable = framebuffer->variable;
     framebuffer->has_original_variable = 1;
     if (framebuffer_remap(framebuffer) != 0) {
@@ -102,6 +124,12 @@ int framebuffer_open(const char *path, struct framebuffer *framebuffer)
         framebuffer->variable.yres,
         framebuffer->variable.bits_per_pixel,
         framebuffer->fixed.line_length
+    );
+    printf(
+        "display transform: rotation=%s logical=%ux%u\n",
+        display_rotation_name(framebuffer->rotation),
+        framebuffer->logical_width,
+        framebuffer->logical_height
     );
     return 0;
 }
@@ -279,33 +307,48 @@ int framebuffer_present_bgra(
     uint32_t stride
 )
 {
-    uint32_t copy_width = width < framebuffer->variable.xres
+    uint32_t copy_width = width < framebuffer->logical_width
         ? width
-        : framebuffer->variable.xres;
-    uint32_t copy_height = height < framebuffer->variable.yres
+        : framebuffer->logical_width;
+    uint32_t copy_height = height < framebuffer->logical_height
         ? height
-        : framebuffer->variable.yres;
+        : framebuffer->logical_height;
     uint32_t y;
 
     for (y = 0; y < copy_height; y++) {
         uint32_t x;
-        size_t row_offset = (size_t)(y + framebuffer->variable.yoffset) *
-                            framebuffer->fixed.line_length;
-        uint8_t *row = framebuffer->memory + row_offset;
         const uint8_t *source = bgra + (size_t)y * stride;
 
         for (x = 0; x < copy_width; x++) {
             const uint8_t *pixel = source + (size_t)x * 4U;
+            int physical_x;
+            int physical_y;
+            size_t row_offset;
+            size_t offset;
+            uint8_t *row;
             uint16_t output = pack_rgb(
                 &framebuffer->variable,
                 pixel[2],
                 pixel[1],
                 pixel[0]
             );
-            size_t offset = (size_t)(x + framebuffer->variable.xoffset) * 2U;
+
+            display_map_logical_to_physical(
+                (int)x,
+                (int)y,
+                (int)framebuffer->variable.xres,
+                (int)framebuffer->variable.yres,
+                framebuffer->rotation,
+                &physical_x,
+                &physical_y
+            );
+            row_offset = (size_t)(physical_y + framebuffer->variable.yoffset) *
+                         framebuffer->fixed.line_length;
+            offset = (size_t)(physical_x + framebuffer->variable.xoffset) * 2U;
             if (row_offset + offset + sizeof(output) > framebuffer->map_length) {
                 return -1;
             }
+            row = framebuffer->memory + row_offset;
             memcpy(row + offset, &output, sizeof(output));
         }
     }

@@ -31,6 +31,7 @@ set(POCKETJS_RUNTIME_C
 add_executable(pocket_host
     src/main.c
     src/device/framebuffer.c
+    src/device/orientation.c
     src/device/touchscreen.c
     src/runtime/guest_file.c
     "${POCKETJS_RUNTIME_C}"
@@ -39,6 +40,7 @@ add_executable(pocket_host
 add_executable(fb_bench
     tests/fb_bench.c
     src/device/framebuffer.c
+    src/device/orientation.c
 )
 
 target_include_directories(pocket_host

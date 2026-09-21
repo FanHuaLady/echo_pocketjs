@@ -3,12 +3,17 @@
 
 #include <stdint.h>
 
+#include "device/orientation.h"
+
 #define TOUCHSCREEN_MAX_SLOTS 8
 
 struct touchscreen {
     int fd;
     int width;
     int height;
+    int physical_width;
+    int physical_height;
+    enum display_rotation rotation;
     int raw_min_x;
     int raw_max_x;
     int raw_min_y;
@@ -39,6 +44,9 @@ int touchscreen_open(
     const char *path,
     int width,
     int height,
+    int physical_width,
+    int physical_height,
+    enum display_rotation rotation,
     struct touchscreen *touchscreen
 );
 void touchscreen_close(struct touchscreen *touchscreen);
